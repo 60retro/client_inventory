@@ -7,7 +7,7 @@ import os
 import json
 
 # --- Config ---
-SHEET_NAME = "invoice_data"
+SHEET_NAME = "inventory_data"
 CREDENTIALS_FILE = "credentials.json"
 
 # ตั้งค่าหน้าเว็บ
@@ -187,3 +187,4 @@ if selected_tab:
                         
                     except Exception as e:
                         st.error(f"{t('error')} {e}")
+
