@@ -22,14 +22,12 @@ def get_google_sheet_client():
     try:
         # 1. อ่านจาก Streamlit Secrets (Cloud)
         if "gcp_json" in st.secrets:
-            # Streamlit แปลง TOML section [gcp_json] เป็น Dict ให้เลย
             info = st.secrets["gcp_json"]
             creds = Credentials.from_service_account_info(info, scopes=scopes)
         
         # 2. อ่านจากไฟล์ Local (PC)
         elif os.path.exists(CREDENTIALS_FILE):
             creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scopes)
-            
         else:
             return None
 
@@ -77,6 +75,9 @@ if selected_tab:
         
         with st.form("stock_entry_form"):
             updates = {} 
+            # สร้างตัวแปรเก็บ cell object เพื่อรอ update ทีเดียว
+            batch_cells = []
+            
             for i, row in df.iterrows():
                 st.markdown(f"---") 
                 cols = st.columns([3, 1.5, 1.5])
@@ -90,8 +91,12 @@ if selected_tab:
                 new_curr = cols[1].number_input("คงเหลือ", min_value=0, value=curr_val, key=f"c_{i}")
                 new_order = cols[2].number_input("สั่งเพิ่ม", min_value=0, value=order_val, key=f"o_{i}")
                 
+                # เช็คว่ามีการแก้ไขหรือไม่
                 if new_curr != curr_val or new_order != order_val:
-                    updates[i + 2] = {"Current": new_curr, "Order": new_order}
+                    # เก็บข้อมูลตำแหน่ง Row และค่าที่จะแก้ไว้ก่อน
+                    # (Row เริ่มที่ 2 เพราะ header=1, i เริ่ม 0)
+                    row_num = i + 2
+                    updates[row_num] = {"Current": new_curr, "Order": new_order}
 
             st.markdown("---")
             if st.form_submit_button("🚀 ส่งข้อมูล (Submit)", type="primary"):
@@ -99,17 +104,22 @@ if selected_tab:
                     st.warning("⚠️ ไม่มีการแก้ไขข้อมูล")
                 else:
                     try:
-                        prog = st.progress(0)
-                        total = len(updates)
-                        done = 0
-                        for r_idx, vals in updates.items():
-                            ws.update_cell(r_idx, 4, vals['Current']) 
-                            ws.update_cell(r_idx, 5, vals['Order'])   
-                            ws.update_cell(r_idx, 7, 'Pending')       
-                            done += 1
-                            prog.progress(done / total)
-                        st.success("✅ ส่งข้อมูลเรียบร้อย!")
+                        with st.spinner("กำลังส่งข้อมูลแบบ Batch..."):
+                            # เตรียม List ของ Cell ทั้งหมดที่จะแก้
+                            cells_to_update = []
+                            for r_idx, vals in updates.items():
+                                # Column 4 = Current, 5 = Order, 7 = Status
+                                cells_to_update.append(gspread.Cell(r_idx, 4, vals['Current']))
+                                cells_to_update.append(gspread.Cell(r_idx, 5, vals['Order']))
+                                cells_to_update.append(gspread.Cell(r_idx, 7, 'Pending'))
+                            
+                            # ยิง API ครั้งเดียวจบ (Batch Update) แก้ปัญหา Quota Exceeded
+                            ws.update_cells(cells_to_update)
+                            
+                        st.success(f"✅ ส่งข้อมูลเรียบร้อย! (อัปเดต {len(updates)} รายการ)")
+                        st.balloons()
                         time.sleep(1)
                         st.rerun()
+                        
                     except Exception as e:
                         st.error(f"❌ Error: {e}")
