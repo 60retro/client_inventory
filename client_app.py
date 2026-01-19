@@ -6,7 +6,7 @@ import time
 import os
 
 # --- Config ---
-SHEET_NAME = "Nami_Inventory_DB"
+SHEET_NAME = "inventory_data"
 CREDENTIALS_FILE = "credentials.json"
 
 # ตั้งค่าหน้าเว็บ
@@ -113,3 +113,4 @@ if selected_tab:
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Error: {e}")
+
