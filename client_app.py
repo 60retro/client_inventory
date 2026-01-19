@@ -4,15 +4,88 @@ import gspread
 from google.oauth2.service_account import Credentials
 import time
 import os
+import json
 
 # --- Config ---
-SHEET_NAME = "inventory_data"
+SHEET_NAME = "invoice_data"
 CREDENTIALS_FILE = "credentials.json"
 
 # ตั้งค่าหน้าเว็บ
 st.set_page_config(page_title="Nami Stock Client", page_icon="📱")
 
-# --- Function เชื่อมต่อ Google Sheet ---
+# --- 1. ระบบภาษา (Translation System) ---
+# กำหนดคำศัพท์สำหรับแต่ละภาษา
+TRANSLATIONS = {
+    "th": {
+        "title": "📱 Nami Stock Check",
+        "caption": "ระบบตรวจนับสต๊อกและสั่งของ (Client)",
+        "select_category": "📂 เลือกหมวดหมู่",
+        "no_items": "⚠️ ไม่มีสินค้าในหมวดหมู่นี้",
+        "instruction": "📝 กรอกยอด **'คงเหลือ'** หรือ **'สั่งเพิ่ม'**",
+        "col_name": "รายการ",
+        "col_remain": "📦 คงเหลือ (Remaining)",
+        "col_order": "🛒 สั่งเพิ่ม (Order)",
+        "submit_btn": "🚀 ส่งข้อมูล (Submit)",
+        "no_changes": "⚠️ ไม่มีการแก้ไขข้อมูล",
+        "sending": "กำลังส่งข้อมูล... (Sending)",
+        "success": "✅ ส่งข้อมูลเรียบร้อย! (Success)",
+        "error": "❌ เกิดข้อผิดพลาด: ",
+        "conn_error": "❌ ไม่สามารถเชื่อมต่อ Google API ได้",
+        "sheet_error": "❌ หาไฟล์ Google Sheet ไม่เจอ: "
+    },
+    "en": {
+        "title": "📱 Nami Stock Check",
+        "caption": "Inventory Counting & Ordering System",
+        "select_category": "📂 Select Category",
+        "no_items": "⚠️ No items found in this category",
+        "instruction": "📝 Enter **'Remaining'** stock or **'Order'** quantity",
+        "col_name": "Item Name",
+        "col_remain": "📦 Remaining",
+        "col_order": "🛒 Order Qty",
+        "submit_btn": "🚀 Submit Data",
+        "no_changes": "⚠️ No changes detected",
+        "sending": "Sending data...",
+        "success": "✅ Data sent successfully!",
+        "error": "❌ Error occurred: ",
+        "conn_error": "❌ Cannot connect to Google API",
+        "sheet_error": "❌ Google Sheet not found: "
+    },
+    "mm": { # ภาษาพม่า
+        "title": "📱 Nami Stock Check",
+        "caption": "ကုန်ပစ္စည်းစာရင်း စစ်ဆေးခြင်းနှင့် မှာယူခြင်းစနစ်",
+        "select_category": "📂 အမျိုးအစား ရွေးပါ (Category)",
+        "no_items": "⚠️ ဤအမျိုးအစားတွင် ပစ္စည်းမရှိပါ",
+        "instruction": "📝 **'လက်ကျန်'** သို့မဟုတ် **'မှာယူမည့်အရေအတွက်'** ကို ထည့်ပါ",
+        "col_name": "ပစ္စည်းအမည်",
+        "col_remain": "📦 လက်ကျန် (Remaining)",
+        "col_order": "🛒 မှာယူမည် (Order)",
+        "submit_btn": "🚀 ပေးပို့ပါ (Submit)",
+        "no_changes": "⚠️ ပြင်ဆင်ထားသော အချက်အလက် မရှိပါ",
+        "sending": "ပေးပို့နေသည်... (Sending)",
+        "success": "✅ ပေးပို့ပြီးပါပြီ! (Success)",
+        "error": "❌ မှားယွင်းမှုရှိသည်: ",
+        "conn_error": "❌ Google API နှင့် ချိတ်ဆက်၍ မရပါ",
+        "sheet_error": "❌ Google Sheet ဖိုင်ကို ရှာမတွေ့ပါ: "
+    }
+}
+
+# ส่วนเลือกภาษาที่ Sidebar
+st.sidebar.title("Language / ภาษา / ဘာသာစကား")
+lang_option = st.sidebar.radio(
+    "Select Language:",
+    ("ภาษาไทย (Thai)", "English", "မြန်မာ (Burmese)")
+)
+
+# แปลงตัวเลือกเป็นรหัสภาษา
+if "Thai" in lang_option: current_lang = "th"
+elif "Burmese" in lang_option: current_lang = "mm"
+else: current_lang = "en"
+
+# ฟังก์ชันดึงคำแปล (Helper Function)
+def t(key):
+    return TRANSLATIONS[current_lang][key]
+
+# --- 2. Function เชื่อมต่อ Google Sheet ---
 @st.cache_resource
 def get_google_sheet_client():
     scopes = [
@@ -20,44 +93,38 @@ def get_google_sheet_client():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        # 1. อ่านจาก Streamlit Secrets (Cloud)
         if "gcp_json" in st.secrets:
             info = st.secrets["gcp_json"]
             creds = Credentials.from_service_account_info(info, scopes=scopes)
-        
-        # 2. อ่านจากไฟล์ Local (PC)
         elif os.path.exists(CREDENTIALS_FILE):
             creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scopes)
         else:
             return None
-
         client = gspread.authorize(creds)
         return client
     except Exception as e:
         st.error(f"Connect Error: {e}")
         return None
 
-# --- Main App ---
-st.title("📱 Nami Stock Check")
-st.caption("ระบบตรวจนับสต๊อกและสั่งของ (Client)")
+# --- 3. Main App Logic ---
+st.title(t("title"))
+st.caption(t("caption"))
 
-# 1. เชื่อมต่อ
 client = get_google_sheet_client()
 
 if not client:
-    st.error("❌ ไม่สามารถเชื่อมต่อ Google API ได้")
-    st.warning("Cloud: กรุณาตั้งค่า Secrets [gcp_json]\nPC: เช็คไฟล์ credentials.json")
+    st.error(t("conn_error"))
     st.stop()
 
 try:
     sh = client.open(SHEET_NAME)
 except gspread.exceptions.SpreadsheetNotFound:
-    st.error(f"❌ หาไฟล์ Google Sheet ชื่อ '{SHEET_NAME}' ไม่เจอ")
+    st.error(f"{t('sheet_error')} '{SHEET_NAME}'")
     st.stop()
 
-# 2. ดึงรายชื่อ Tab
+# ดึงรายชื่อ Tab
 all_worksheets = [ws.title for ws in sh.worksheets()]
-selected_tab = st.selectbox("📂 เลือกหมวดหมู่", all_worksheets)
+selected_tab = st.selectbox(t("select_category"), all_worksheets)
 
 if selected_tab:
     ws = sh.worksheet(selected_tab)
@@ -69,18 +136,18 @@ if selected_tab:
         st.stop()
 
     if df.empty:
-        st.warning("ไม่มีสินค้าในหมวดหมู่นี้")
+        st.warning(t("no_items"))
     else:
-        st.info("📝 กรอกยอด **'คงเหลือ'** หรือ **'สั่งเพิ่ม'**")
+        st.info(t("instruction"))
         
         with st.form("stock_entry_form"):
             updates = {} 
-            # สร้างตัวแปรเก็บ cell object เพื่อรอ update ทีเดียว
-            batch_cells = []
             
             for i, row in df.iterrows():
                 st.markdown(f"---") 
                 cols = st.columns([3, 1.5, 1.5])
+                
+                # แสดงชื่อสินค้า
                 cols[0].markdown(f"**{row['Name']}**")
                 
                 try: curr_val = int(row['Current']) if row['Current'] != '' else 0
@@ -88,38 +155,35 @@ if selected_tab:
                 try: order_val = int(row['Order']) if row['Order'] != '' else 0
                 except: order_val = 0
                 
-                new_curr = cols[1].number_input("คงเหลือ", min_value=0, value=curr_val, key=f"c_{i}")
-                new_order = cols[2].number_input("สั่งเพิ่ม", min_value=0, value=order_val, key=f"o_{i}")
+                # ช่องกรอกข้อมูล (เปลี่ยน Label ตามภาษา)
+                new_curr = cols[1].number_input(t("col_remain"), min_value=0, value=curr_val, key=f"c_{i}")
+                new_order = cols[2].number_input(t("col_order"), min_value=0, value=order_val, key=f"o_{i}")
                 
-                # เช็คว่ามีการแก้ไขหรือไม่
                 if new_curr != curr_val or new_order != order_val:
-                    # เก็บข้อมูลตำแหน่ง Row และค่าที่จะแก้ไว้ก่อน
-                    # (Row เริ่มที่ 2 เพราะ header=1, i เริ่ม 0)
-                    row_num = i + 2
-                    updates[row_num] = {"Current": new_curr, "Order": new_order}
+                    # i=0 -> row=2 (เพราะ header=1)
+                    updates[i + 2] = {"Current": new_curr, "Order": new_order}
 
             st.markdown("---")
-            if st.form_submit_button("🚀 ส่งข้อมูล (Submit)", type="primary"):
+            # ปุ่ม Submit เปลี่ยนภาษาได้
+            if st.form_submit_button(t("submit_btn"), type="primary"):
                 if not updates:
-                    st.warning("⚠️ ไม่มีการแก้ไขข้อมูล")
+                    st.warning(t("no_changes"))
                 else:
                     try:
-                        with st.spinner("กำลังส่งข้อมูลแบบ Batch..."):
-                            # เตรียม List ของ Cell ทั้งหมดที่จะแก้
+                        with st.spinner(t("sending")):
                             cells_to_update = []
                             for r_idx, vals in updates.items():
-                                # Column 4 = Current, 5 = Order, 7 = Status
-                                cells_to_update.append(gspread.Cell(r_idx, 4, vals['Current']))
-                                cells_to_update.append(gspread.Cell(r_idx, 5, vals['Order']))
-                                cells_to_update.append(gspread.Cell(r_idx, 7, 'Pending'))
+                                # Batch Update Logic (เหมือนเดิม)
+                                cells_to_update.append(gspread.Cell(r_idx, 4, vals['Current'])) 
+                                cells_to_update.append(gspread.Cell(r_idx, 5, vals['Order']))   
+                                cells_to_update.append(gspread.Cell(r_idx, 7, 'Pending'))       
                             
-                            # ยิง API ครั้งเดียวจบ (Batch Update) แก้ปัญหา Quota Exceeded
                             ws.update_cells(cells_to_update)
                             
-                        st.success(f"✅ ส่งข้อมูลเรียบร้อย! (อัปเดต {len(updates)} รายการ)")
+                        st.success(f"{t('success')} ({len(updates)} items)")
                         st.balloons()
                         time.sleep(1)
                         st.rerun()
                         
                     except Exception as e:
-                        st.error(f"❌ Error: {e}")
+                        st.error(f"{t('error')} {e}")
