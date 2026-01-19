@@ -3,6 +3,8 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import time
+import json
+import os
 
 # --- Config ---
 SHEET_NAME = "Nami_Inventory_DB"
@@ -11,7 +13,7 @@ CREDENTIALS_FILE = "credentials.json"
 # ตั้งค่าหน้าเว็บ
 st.set_page_config(page_title="Nami Stock Client", page_icon="📱")
 
-# --- Function เชื่อมต่อ Google Sheet (ใช้ Cache เพื่อความเร็ว) ---
+# --- Function เชื่อมต่อ Google Sheet ---
 @st.cache_resource
 def get_google_sheet_client():
     scopes = [
@@ -19,10 +21,23 @@ def get_google_sheet_client():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scopes)
+        # 1. ลองอ่านจาก Streamlit Secrets (สำหรับบน Cloud)
+        if "gcp_json" in st.secrets:
+            # แปลง string json ใน secrets กลับเป็น dict
+            info = json.loads(st.secrets["gcp_json"])
+            creds = Credentials.from_service_account_info(info, scopes=scopes)
+        
+        # 2. ถ้าไม่มีใน Secrets ให้ลองหาไฟล์ local (สำหรับรันบนคอม)
+        elif os.path.exists(CREDENTIALS_FILE):
+            creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scopes)
+            
+        else:
+            return None
+
         client = gspread.authorize(creds)
         return client
     except Exception as e:
+        st.error(f"Error detail: {e}")
         return None
 
 # --- Main App ---
@@ -33,7 +48,8 @@ st.caption("ระบบตรวจนับสต๊อกและสั่�
 client = get_google_sheet_client()
 
 if not client:
-    st.error("❌ ไม่สามารถเชื่อมต่อ Google API ได้ (เช็คไฟล์ credentials.json)")
+    st.error("❌ ไม่สามารถเชื่อมต่อ Google API ได้")
+    st.warning("บน Cloud: กรุณาตั้งค่า Secrets ชื่อ 'gcp_json'\nบน PC: กรุณาเช็คไฟล์ credentials.json")
     st.stop()
 
 try:
@@ -65,49 +81,26 @@ if selected_tab:
         
         # --- Form สำหรับกรอกข้อมูล ---
         with st.form("stock_entry_form"):
-            # ตัวแปรเก็บค่าที่แก้ไข {row_index: {col: val}}
             updates = {} 
             
-            # วนลูปสร้าง Input ตามจำนวนสินค้า
-            # ใช้ columns เพื่อจัดหน้าตาให้ดูง่าย (ชื่อสินค้า | คงเหลือ | สั่ง)
             for i, row in df.iterrows():
                 st.markdown(f"---") 
                 cols = st.columns([3, 1.5, 1.5])
                 
-                # ชื่อสินค้า
                 cols[0].markdown(f"**{row['Name']}**")
                 
-                # แปลงค่าเดิมเป็น int เพื่อใส่ในช่อง Input (ถ้าว่างให้เป็น 0)
+                # แปลงค่าเดิม
                 try: curr_val = int(row['Current']) if row['Current'] != '' else 0
                 except: curr_val = 0
-                
                 try: order_val = int(row['Order']) if row['Order'] != '' else 0
                 except: order_val = 0
                 
-                # ช่องกรอก Current (คงเหลือ)
-                new_curr = cols[1].number_input(
-                    "📦 คงเหลือ", 
-                    min_value=0, 
-                    value=curr_val, 
-                    key=f"curr_{i}"
-                )
+                new_curr = cols[1].number_input("📦 คงเหลือ", min_value=0, value=curr_val, key=f"curr_{i}")
+                new_order = cols[2].number_input("🛒 สั่งเพิ่ม", min_value=0, value=order_val, key=f"order_{i}")
                 
-                # ช่องกรอก Order (สั่ง)
-                new_order = cols[2].number_input(
-                    "🛒 สั่งเพิ่ม", 
-                    min_value=0, 
-                    value=order_val, 
-                    key=f"order_{i}"
-                )
-                
-                # เช็คว่ามีการเปลี่ยนแปลงหรือไม่
                 if new_curr != curr_val or new_order != order_val:
-                    # เก็บ row index (Google Sheet เริ่มที่ 1, Header คือแถว 1, ดังนั้น data เริ่มแถว 2)
-                    # i เริ่ม 0 ดังนั้น row จริงคือ i + 2
-                    updates[i + 2] = {
-                        "Current": new_curr,
-                        "Order": new_order
-                    }
+                    # i เริ่ม 0, แถวใน sheet เริ่ม 2 (header=1)
+                    updates[i + 2] = {"Current": new_curr, "Order": new_order}
 
             st.markdown("---")
             submitted = st.form_submit_button("🚀 ส่งข้อมูลไปที่ Host (Submit)", type="primary")
@@ -116,37 +109,23 @@ if selected_tab:
                 if not updates:
                     st.warning("⚠️ คุณยังไม่ได้แก้ไขข้อมูลใดๆ")
                 else:
-                    # --- Process Update ---
                     progress_bar = st.progress(0)
                     status_text = st.empty()
-                    
                     try:
                         total_upd = len(updates)
                         count = 0
-                        
-                        # คอลัมน์อ้างอิงตาม Header: No, Name, Prev, Current, Order, Price, Status
-                        # Current = Col 4 (D)
-                        # Order   = Col 5 (E)
-                        # Status  = Col 7 (G)
-                        
+                        # Column Index: D(4)=Current, E(5)=Order, G(7)=Status
                         for row_idx, vals in updates.items():
                             status_text.text(f"Updating row {row_idx}...")
-                            
-                            # อัปเดตทีละ Cell (ช้าหน่อยแต่ชัวร์)
-                            # ถ้าข้อมูลเยอะมากแนะนำให้อัปเกรดเป็น batch_update ในอนาคต
-                            ws.update_cell(row_idx, 4, vals['Current']) # Update Current
-                            ws.update_cell(row_idx, 5, vals['Order'])   # Update Order
-                            ws.update_cell(row_idx, 7, 'Pending')       # Update Status -> ให้ Host รู้ว่าต้อง Sync
-                            
+                            ws.update_cell(row_idx, 4, vals['Current']) 
+                            ws.update_cell(row_idx, 5, vals['Order'])   
+                            ws.update_cell(row_idx, 7, 'Pending')       
                             count += 1
                             progress_bar.progress(count / total_upd)
                             
-                        st.success("✅ ส่งข้อมูลเรียบร้อยแล้ว! (Data sent successfully)")
+                        st.success("✅ ส่งข้อมูลเรียบร้อยแล้ว!")
                         st.balloons()
-                        
-                        # รอ 2 วินาทีแล้ว Refresh หน้าจอเพื่อโหลดค่าใหม่
                         time.sleep(2)
                         st.rerun()
-                        
                     except Exception as e:
-                        st.error(f"❌ เกิดข้อผิดพลาดในการส่งข้อมูล: {e}")
+                        st.error(f"❌ เกิดข้อผิดพลาด: {e}")
