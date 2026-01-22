@@ -3,7 +3,7 @@ openpyxl
 requests
 gspread
 google-auth
-streamlit
+streamlit>=1.41.0
 google-generativeai
 matplotlib
 altair<5
