@@ -1,3 +1,14 @@
+import sys
+from types import ModuleType
+
+# --- 🛠️ ส่วนแก้บั๊ก Python 3.13 (Mock imghdr module) ---
+# ต้องใส่ไว้บนสุด ก่อน import streamlit เสมอ
+if sys.version_info >= (3, 13):
+    m = ModuleType("imghdr")
+    m.what = lambda *args: None  # สร้างฟังก์ชันปลอมๆ ขึ้นมาหลอก
+    sys.modules["imghdr"] = m
+# ----------------------------------------------------
+
 import streamlit as st
 import pandas as pd
 import gspread
@@ -14,7 +25,6 @@ CREDENTIALS_FILE = "credentials.json"
 st.set_page_config(page_title="Nami Stock Client", page_icon="📱")
 
 # --- 1. ระบบภาษา (Translation System) ---
-# กำหนดคำศัพท์สำหรับแต่ละภาษา
 TRANSLATIONS = {
     "th": {
         "title": "📱 Nami Stock Check",
@@ -50,7 +60,7 @@ TRANSLATIONS = {
         "conn_error": "❌ Cannot connect to Google API",
         "sheet_error": "❌ Google Sheet not found: "
     },
-    "mm": { # ภาษาพม่า
+    "mm": { 
         "title": "📱 Nami Stock Check",
         "caption": "ကုန်ပစ္စည်းစာရင်း စစ်ဆေးခြင်းနှင့် မှာယူခြင်းစနစ်",
         "select_category": "📂 အမျိုးအစား ရွေးပါ (Category)",
@@ -69,19 +79,17 @@ TRANSLATIONS = {
     }
 }
 
-# ส่วนเลือกภาษาที่ Sidebar
+# Sidebar Language Selection
 st.sidebar.title("Language / ภาษา / ဘာသာစကား")
 lang_option = st.sidebar.radio(
     "Select Language:",
     ("ภาษาไทย (Thai)", "English", "မြန်မာ (Burmese)")
 )
 
-# แปลงตัวเลือกเป็นรหัสภาษา
 if "Thai" in lang_option: current_lang = "th"
 elif "Burmese" in lang_option: current_lang = "mm"
 else: current_lang = "en"
 
-# ฟังก์ชันดึงคำแปล (Helper Function)
 def t(key):
     return TRANSLATIONS[current_lang][key]
 
@@ -93,13 +101,16 @@ def get_google_sheet_client():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
+        # อ่านจาก Secrets (Cloud)
         if "gcp_json" in st.secrets:
             info = st.secrets["gcp_json"]
             creds = Credentials.from_service_account_info(info, scopes=scopes)
+        # อ่านจาก Local File (PC)
         elif os.path.exists(CREDENTIALS_FILE):
             creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scopes)
         else:
             return None
+        
         client = gspread.authorize(creds)
         return client
     except Exception as e:
@@ -122,7 +133,7 @@ except gspread.exceptions.SpreadsheetNotFound:
     st.error(f"{t('sheet_error')} '{SHEET_NAME}'")
     st.stop()
 
-# ดึงรายชื่อ Tab
+# Load Data
 all_worksheets = [ws.title for ws in sh.worksheets()]
 selected_tab = st.selectbox(t("select_category"), all_worksheets)
 
@@ -147,7 +158,6 @@ if selected_tab:
                 st.markdown(f"---") 
                 cols = st.columns([3, 1.5, 1.5])
                 
-                # แสดงชื่อสินค้า
                 cols[0].markdown(f"**{row['Name']}**")
                 
                 try: curr_val = int(row['Current']) if row['Current'] != '' else 0
@@ -155,16 +165,13 @@ if selected_tab:
                 try: order_val = int(row['Order']) if row['Order'] != '' else 0
                 except: order_val = 0
                 
-                # ช่องกรอกข้อมูล (เปลี่ยน Label ตามภาษา)
                 new_curr = cols[1].number_input(t("col_remain"), min_value=0, value=curr_val, key=f"c_{i}")
                 new_order = cols[2].number_input(t("col_order"), min_value=0, value=order_val, key=f"o_{i}")
                 
                 if new_curr != curr_val or new_order != order_val:
-                    # i=0 -> row=2 (เพราะ header=1)
                     updates[i + 2] = {"Current": new_curr, "Order": new_order}
 
             st.markdown("---")
-            # ปุ่ม Submit เปลี่ยนภาษาได้
             if st.form_submit_button(t("submit_btn"), type="primary"):
                 if not updates:
                     st.warning(t("no_changes"))
@@ -173,7 +180,6 @@ if selected_tab:
                         with st.spinner(t("sending")):
                             cells_to_update = []
                             for r_idx, vals in updates.items():
-                                # Batch Update Logic (เหมือนเดิม)
                                 cells_to_update.append(gspread.Cell(r_idx, 4, vals['Current'])) 
                                 cells_to_update.append(gspread.Cell(r_idx, 5, vals['Order']))   
                                 cells_to_update.append(gspread.Cell(r_idx, 7, 'Pending'))       
@@ -187,4 +193,3 @@ if selected_tab:
                         
                     except Exception as e:
                         st.error(f"{t('error')} {e}")
-
