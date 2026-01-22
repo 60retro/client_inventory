@@ -6,3 +6,4 @@ google-auth
 streamlit
 google-generativeai
 matplotlib
+altair<5
