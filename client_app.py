@@ -40,7 +40,9 @@ TRANSLATIONS = {
         "col_order": "🛒 สั่งเพิ่ม",
         "col_ordered": "📋 ยอดที่สั่ง",
         "col_actual": "✅ รับจริง",
-        "submit_btn": "🚀 ส่งข้อมูล (Submit)",
+        "submit_btn": "🚀 ส่งข้อมูลจริง (Submit)",
+        "save_draft": "💾 บันทึกร่างกันหาย",
+        "save_draft_success": "✅ บันทึกแบบร่างเรียบร้อย! คีย์ต่อได้เลย",
         "no_changes": "⚠️ ไม่มีการแก้ไขข้อมูล",
         "sending": "กำลังส่งข้อมูล...",
         "success": "✅ ส่งข้อมูลเรียบร้อย!",
@@ -64,7 +66,9 @@ TRANSLATIONS = {
         "col_order": "🛒 Order Qty",
         "col_ordered": "📋 Ordered",
         "col_actual": "✅ Actual Recv",
-        "submit_btn": "🚀 Submit Data",
+        "submit_btn": "🚀 Submit Final",
+        "save_draft": "💾 Save Draft",
+        "save_draft_success": "✅ Draft saved successfully!",
         "no_changes": "⚠️ No changes detected",
         "sending": "Sending data...",
         "success": "✅ Data sent successfully!",
@@ -88,17 +92,19 @@ TRANSLATIONS = {
         "col_order": "🛒 မှာယူမည်",
         "col_ordered": "📋 မှာယူထားသည်",
         "col_actual": "✅ လက်ခံရရှိသည်",
-        "submit_btn": "🚀 ပေးပို့ပါ (Submit)",
+        "submit_btn": "🚀 အတည်ပြုပေးပို့ပါ (Submit)",
+        "save_draft": "💾 မူကြမ်းသိမ်းဆည်းပါ (Draft)",
+        "save_draft_success": "✅ မူကြမ်းသိမ်းဆည်းပြီးပါပြီ!",
         "no_changes": "⚠️ ပြင်ဆင်ထားသော အချက်အလက် မရှိပါ",
-        "sending": "ပေးပို့နေသည်... (Sending)",
-        "success": "✅ ပေးပို့ပြီးပါပြီ! (Success)",
+        "sending": "ပေးပို့နေသည်...",
+        "success": "✅ ပေးပို့ပြီးပါပြီ!",
         "error": "❌ မှားယွင်းမှုရှိသည်: ",
         "conn_error": "❌ Google API နှင့် ချိတ်ဆက်၍ မရပါ",
         "sheet_error": "❌ Google Sheet ဖိုင်ကို ရှာမတွေ့ပါ: "
     }
 }
 
-# 🟢 Sidebar เลือกภาษา (ใส่ภาษาพม่ากลับมาแล้ว)
+# 🟢 Sidebar เลือกภาษา
 st.sidebar.title("Language / ภาษา / ဘာသာစကား")
 lang_option = st.sidebar.radio(
     "Select Language:",
@@ -132,7 +138,6 @@ def get_google_sheet_client():
 st.title(t("title"))
 st.caption(t("caption"))
 
-# 🟢 เพิ่ม Radio Button สำหรับเลือกโหมด
 app_mode = st.radio(t("mode_select"), [t("mode_order"), t("mode_receive")], horizontal=True)
 st.markdown("---")
 
@@ -185,15 +190,13 @@ if selected_tab:
                 new_order = cols[2].number_input(t("col_order"), min_value=0, value=order_val, key=f"o_{i}")
                 
                 if new_curr != curr_val or new_order != order_val:
-                    updates[i + 2] = {"Current": new_curr, "Order": new_order, "Status": "Order_Submitted"}
+                    updates[i + 2] = {"Current": new_curr, "Order": new_order}
 
         # ==========================================
         # 📦 โหมด 2: ตรวจรับสินค้า (Receive Mode)
         # ==========================================
         else:
             st.info(t("instruction_receive"))
-            
-            # กรองเฉพาะรายการที่สั่งไป (Order > 0 หรือ Status เป็น Order_Submitted)
             pending_items = 0
             
             for i, row in df.iterrows():
@@ -201,47 +204,61 @@ if selected_tab:
                 except: order_val = 0
                 status_val = str(row.get('Status', '')).strip()
                 
-                if order_val > 0 or status_val == "Order_Submitted":
+                # 🟢 ยอมให้แสดงถ้ารายการนี้เป็นแบบร่าง (Draft_Receive) ด้วย
+                if order_val > 0 or status_val in ["Order_Submitted", "Draft_Receive"]:
                     pending_items += 1
                     st.markdown("---") 
                     cols = st.columns([3, 1.5, 1.5])
                     cols[0].markdown(f"**{row['Name']}**")
                     
-                    # โชว์ยอดที่สั่ง (อ่านอย่างเดียว)
                     cols[1].markdown(f"<div style='text-align:center;'><small>{t('col_ordered')}</small><br><b>{order_val}</b></div>", unsafe_allow_html=True)
                     
-                    # ช่องกรอกยอดรับจริง (Default เท่ากับยอดที่สั่ง)
-                    actual_recv = cols[2].number_input(t("col_actual"), min_value=0, value=order_val, key=f"r_{i}")
+                    # 🟢 ถ้ามีข้อมูลรับของร่างไว้ ให้ดึงมาโชว์ ถ้าไม่มีให้ดึงยอดสั่งเป็นค่าเริ่มต้น
+                    try: saved_actual = int(row.get('Actual Recv', order_val)) if str(row.get('Actual Recv', '')).strip() != '' else order_val
+                    except: saved_actual = order_val
                     
-                    updates[i + 2] = {"Actual_Recv": actual_recv, "Status": "Received"}
+                    actual_recv = cols[2].number_input(t("col_actual"), min_value=0, value=saved_actual, key=f"r_{i}")
+                    
+                    updates[i + 2] = {"Actual_Recv": actual_recv}
             
             if pending_items == 0:
                 st.success(t("no_pending"))
 
         # ==========================================
-        # 🚀 ปุ่มส่งข้อมูลและอัปเดต Google Sheet
+        # 🚀 2 ปุ่มใหม่: "ส่งข้อมูลจริง" กับ "บันทึกร่างกันหาย"
         # ==========================================
         st.markdown("---")
-        if st.form_submit_button(t("submit_btn"), type="primary"):
+        btn_cols = st.columns(2)
+        submit_btn = btn_cols[0].form_submit_button(t("submit_btn"), type="primary", use_container_width=True)
+        draft_btn = btn_cols[1].form_submit_button(t("save_draft"), use_container_width=True)
+
+        if submit_btn or draft_btn:
             if not updates:
                 st.warning(t("no_changes"))
             else:
                 try:
-                    with st.spinner(t("sending")):
+                    with st.spinner(t("sending") if submit_btn else "Saving draft..."):
                         cells_to_update = []
                         for r_idx, vals in updates.items():
                             if app_mode == t("mode_order"):
-                                cells_to_update.append(gspread.Cell(r_idx, 4, vals['Current'])) # Col D
-                                cells_to_update.append(gspread.Cell(r_idx, 5, vals['Order']))   # Col E
-                                cells_to_update.append(gspread.Cell(r_idx, 7, vals['Status']))  # Col G
+                                # 🟢 แยกสถานะ ส่งจริง vs ร่าง
+                                final_status = "Order_Submitted" if submit_btn else "Draft_Order"
+                                cells_to_update.append(gspread.Cell(r_idx, 4, vals['Current'])) 
+                                cells_to_update.append(gspread.Cell(r_idx, 5, vals['Order']))   
+                                cells_to_update.append(gspread.Cell(r_idx, 7, final_status))  
                             else:
-                                cells_to_update.append(gspread.Cell(r_idx, 8, vals['Actual_Recv'])) # Col H (คอลัมน์ใหม่สำหรับรับจริง)
-                                cells_to_update.append(gspread.Cell(r_idx, 7, vals['Status']))      # Col G
+                                final_status = "Received" if submit_btn else "Draft_Receive"
+                                cells_to_update.append(gspread.Cell(r_idx, 8, vals['Actual_Recv'])) 
+                                cells_to_update.append(gspread.Cell(r_idx, 7, final_status))      
 
                         ws.update_cells(cells_to_update)
                         
-                    st.success(f"{t('success')} ({len(updates)} items)")
-                    st.balloons()
+                    if submit_btn:
+                        st.success(f"{t('success')} ({len(updates)} items)")
+                        st.balloons()
+                    else:
+                        st.success(t("save_draft_success"))
+                        
                     time.sleep(1.5)
                     st.rerun()
                     
