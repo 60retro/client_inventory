@@ -71,12 +71,43 @@ TRANSLATIONS = {
         "error": "❌ Error occurred: ",
         "conn_error": "❌ Cannot connect to Google API",
         "sheet_error": "❌ Google Sheet not found: "
+    },
+    "mm": { 
+        "title": "📱 Nami Stock Check",
+        "caption": "ကုန်ပစ္စည်းစာရင်း စစ်ဆေးခြင်းနှင့် မှာယူခြင်းစနစ်",
+        "select_category": "📂 အမျိုးအစား ရွေးပါ (Category)",
+        "mode_select": "လုပ်ဆောင်မှုမုဒ်ကို ရွေးပါ:",
+        "mode_order": "📝 1. စာရင်းစစ်ပြီး မှာယူမည်",
+        "mode_receive": "📦 2. ပစ္စည်းလက်ခံမည်",
+        "no_items": "⚠️ ဤအမျိုးအစားတွင် ပစ္စည်းမရှိပါ",
+        "no_pending": "🎉 လက်ခံရန် စောင့်ဆိုင်းနေသော ပစ္စည်းမရှိပါ",
+        "instruction_order": "📝 **'လက်ကျန်'** သို့မဟုတ် **'မှာယူမည့်အရေအတွက်'** ကို ထည့်ပါ",
+        "instruction_receive": "🔎 မှာယူထားသော အရေအတွက်နှင့် **'လက်ခံရရှိသော အရေအတွက်'** ကို တိုက်ဆိုင်စစ်ဆေးပါ",
+        "col_name": "ပစ္စည်းအမည်",
+        "col_remain": "📦 လက်ကျန်",
+        "col_order": "🛒 မှာယူမည်",
+        "col_ordered": "📋 မှာယူထားသည်",
+        "col_actual": "✅ လက်ခံရရှိသည်",
+        "submit_btn": "🚀 ပေးပို့ပါ (Submit)",
+        "no_changes": "⚠️ ပြင်ဆင်ထားသော အချက်အလက် မရှိပါ",
+        "sending": "ပေးပို့နေသည်... (Sending)",
+        "success": "✅ ပေးပို့ပြီးပါပြီ! (Success)",
+        "error": "❌ မှားယွင်းမှုရှိသည်: ",
+        "conn_error": "❌ Google API နှင့် ချိတ်ဆက်၍ မရပါ",
+        "sheet_error": "❌ Google Sheet ဖိုင်ကို ရှာမတွေ့ပါ: "
     }
 }
 
-st.sidebar.title("Language / ภาษา")
-lang_option = st.sidebar.radio("Select Language:", ("ภาษาไทย (Thai)", "English"))
-current_lang = "th" if "Thai" in lang_option else "en"
+# 🟢 Sidebar เลือกภาษา (ใส่ภาษาพม่ากลับมาแล้ว)
+st.sidebar.title("Language / ภาษา / ဘာသာစကား")
+lang_option = st.sidebar.radio(
+    "Select Language:",
+    ("ภาษาไทย (Thai)", "English", "မြန်မာ (Burmese)")
+)
+
+if "Thai" in lang_option: current_lang = "th"
+elif "Burmese" in lang_option: current_lang = "mm"
+else: current_lang = "en"
 
 def t(key): return TRANSLATIONS[current_lang][key]
 
