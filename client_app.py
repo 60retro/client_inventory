@@ -229,9 +229,9 @@ if selected_tab:
         # ==========================================
         st.markdown("---")
         btn_cols = st.columns(2)
-        submit_btn = btn_cols[0].form_submit_button(t("submit_btn"), type="primary", use_container_width=True)
         draft_btn = btn_cols[1].form_submit_button(t("save_draft"), use_container_width=True)
-
+        submit_btn = btn_cols[0].form_submit_button(t("submit_btn"), type="primary", use_container_width=True)
+        
         if submit_btn or draft_btn:
             if not updates:
                 st.warning(t("no_changes"))
@@ -264,3 +264,4 @@ if selected_tab:
                     
                 except Exception as e:
                     st.error(f"{t('error')} {e}")
+
