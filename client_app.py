@@ -118,7 +118,6 @@ else: current_lang = "en"
 def t(key): return TRANSLATIONS[current_lang][key]
 
 # --- 2. Function เชื่อมต่อ Google Sheet ---
-@st.cache_resource
 def get_google_sheet_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
