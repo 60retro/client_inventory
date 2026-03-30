@@ -188,8 +188,8 @@ if selected_tab:
                 new_curr = cols[1].number_input(t("col_remain"), min_value=0, value=curr_val, key=f"c_{i}")
                 new_order = cols[2].number_input(t("col_order"), min_value=0, value=order_val, key=f"o_{i}")
                 
-                if new_curr != curr_val or new_order != order_val:
-                    updates[i + 2] = {"Current": new_curr, "Order": new_order}
+                # 🟢 บังคับเก็บข้อมูลทุกรายการ ไม่ว่าจะเปลี่ยนตัวเลขหรือไม่ก็ตาม
+                updates[i + 2] = {"Current": new_curr, "Order": new_order}
 
         # ==========================================
         # 📦 โหมด 2: ตรวจรับสินค้า (Receive Mode)
@@ -203,7 +203,6 @@ if selected_tab:
                 except: order_val = 0
                 status_val = str(row.get('Status', '')).strip()
                 
-                # 🟢 ยอมให้แสดงถ้ารายการนี้เป็นแบบร่าง (Draft_Receive) ด้วย
                 if order_val > 0 or status_val in ["Order_Submitted", "Draft_Receive"]:
                     pending_items += 1
                     st.markdown("---") 
@@ -212,7 +211,6 @@ if selected_tab:
                     
                     cols[1].markdown(f"<div style='text-align:center;'><small>{t('col_ordered')}</small><br><b>{order_val}</b></div>", unsafe_allow_html=True)
                     
-                    # 🟢 ถ้ามีข้อมูลรับของร่างไว้ ให้ดึงมาโชว์ ถ้าไม่มีให้ดึงยอดสั่งเป็นค่าเริ่มต้น
                     try: saved_actual = int(row.get('Actual Recv', order_val)) if str(row.get('Actual Recv', '')).strip() != '' else order_val
                     except: saved_actual = order_val
                     
@@ -240,7 +238,6 @@ if selected_tab:
                         cells_to_update = []
                         for r_idx, vals in updates.items():
                             if app_mode == t("mode_order"):
-                                # 🟢 แยกสถานะ ส่งจริง vs ร่าง
                                 final_status = "Order_Submitted" if submit_btn else "Draft_Order"
                                 cells_to_update.append(gspread.Cell(r_idx, 4, vals['Current'])) 
                                 cells_to_update.append(gspread.Cell(r_idx, 5, vals['Order']))   
@@ -263,5 +260,3 @@ if selected_tab:
                     
                 except Exception as e:
                     st.error(f"{t('error')} {e}")
-
-
